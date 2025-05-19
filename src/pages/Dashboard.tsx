@@ -24,7 +24,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { format } from 'date-fns';
 import ReservationList from '../components/ReservationList';
 import ReservationForm from '../components/ReservationForm';
-import { Reservation, ReservationFilters } from '../types';
+import { Reservation, ReservationFilters, CallFluentPayload } from '../types';
 import axios from 'axios';
 
 const Dashboard = () => {
@@ -189,6 +189,44 @@ const Dashboard = () => {
     setOpenForm(true);
   };
 
+  // Function to send reservation data to CallFluent webhook
+  const sendToCallfluentWebhook = async (reservation: Reservation) => {
+    try {
+      // Get CallFluent settings from localStorage
+      const savedSettings = localStorage.getItem('callfluentSettings');
+      if (!savedSettings) {
+        console.log('CallFluent settings not found');
+        return;
+      }
+      
+      const settings = JSON.parse(savedSettings);
+      
+      // Check if auto-calling is enabled and webhook URL is set
+      if (!settings.autoCallEnabled || !settings.webhookEndpoint) {
+        console.log('Auto-calling is disabled or webhook URL is not set');
+        return;
+      }
+      
+      // Prepare payload for CallFluent
+      const payload: CallFluentPayload = {
+        customerName: reservation.customerName,
+        phoneNumber: reservation.phoneNumber,
+        date: reservation.date,
+        time: reservation.time,
+        partySize: reservation.partySize,
+        notes: reservation.notes
+      };
+      
+      // Send data to CallFluent webhook
+      await axios.post(settings.webhookEndpoint, payload);
+      console.log('Reservation data sent to CallFluent webhook');
+      
+      showSnackbar('Reservation data sent to CallFluent AI for automated call', 'info');
+    } catch (error) {
+      console.error('Error sending data to CallFluent webhook:', error);
+    }
+  };
+
   const handleSaveReservation = async (reservationData: Omit<Reservation, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       if (selectedReservation) {
@@ -206,8 +244,12 @@ const Dashboard = () => {
         // Create new reservation
         const response = await axios.post('/api/reservations', reservationData);
         if (response.data.success) {
-          setReservations(prev => [...prev, response.data.data]);
+          const newReservation = response.data.data;
+          setReservations(prev => [...prev, newReservation]);
           showSnackbar('Reservation created successfully', 'success');
+          
+          // Send to CallFluent webhook for automated call
+          await sendToCallfluentWebhook(newReservation);
         } else {
           showSnackbar(response.data.error || 'Failed to create reservation', 'error');
         }
@@ -233,6 +275,9 @@ const Dashboard = () => {
       } else {
         // Create new reservation
         setReservations(prev => [...prev, newReservation]);
+        
+        // Send to CallFluent webhook for automated call (demo)
+        await sendToCallfluentWebhook(newReservation);
       }
       
       showSnackbar('Reservation saved successfully', 'success');
@@ -298,6 +343,24 @@ const Dashboard = () => {
       ...snackbar,
       open: false,
     });
+  };
+
+  const handleTriggerReminderCall = async (id: string) => {
+    try {
+      const reservation = reservations.find(r => r.id === id);
+      if (!reservation) {
+        showSnackbar('Reservation not found', 'error');
+        return;
+      }
+      
+      // Send to CallFluent webhook for reminder call
+      await sendToCallfluentWebhook(reservation);
+      
+      showSnackbar('Reminder call triggered successfully', 'success');
+    } catch (error) {
+      console.error('Error triggering reminder call:', error);
+      showSnackbar('Failed to trigger reminder call', 'error');
+    }
   };
 
   return (
@@ -389,6 +452,7 @@ const Dashboard = () => {
           reservations={filteredReservations} 
           onEditReservation={handleEditReservation}
           onUpdateStatus={handleUpdateStatus}
+          onTriggerReminderCall={handleTriggerReminderCall}
         />
       )}
       

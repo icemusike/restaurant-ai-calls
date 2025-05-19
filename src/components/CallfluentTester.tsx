@@ -10,11 +10,10 @@ import {
 import axios from 'axios';
 
 interface CallfluentTesterProps {
-  apiKey: string;
-  apiEndpoint: string; // Keeping this for future use
+  webhookEndpoint: string;
 }
 
-const CallfluentTester = ({ apiKey }: CallfluentTesterProps) => {
+const CallfluentTester = ({ webhookEndpoint }: CallfluentTesterProps) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
     success: boolean;
@@ -22,10 +21,10 @@ const CallfluentTester = ({ apiKey }: CallfluentTesterProps) => {
   } | null>(null);
 
   const testConnection = async () => {
-    if (!apiKey) {
+    if (!webhookEndpoint) {
       setResult({
         success: false,
-        message: 'API key is required to test the connection'
+        message: 'Webhook URL is required to test the connection'
       });
       return;
     }
@@ -34,18 +33,22 @@ const CallfluentTester = ({ apiKey }: CallfluentTesterProps) => {
     setResult(null);
 
     try {
-      const response = await axios.post('/api/callfluent/test');
+      // Send a test payload to the webhook
+      const response = await axios.post(webhookEndpoint, {
+        test: true,
+        message: 'This is a test from the Restaurant Reservation System'
+      });
       
       setResult({
-        success: response.data.success,
-        message: response.data.message || 'Connection successful'
+        success: true,
+        message: 'Successfully connected to CallFluent AI webhook'
       });
     } catch (error) {
-      console.error('Error testing CallFluent connection:', error);
+      console.error('Error testing CallFluent webhook:', error);
       
       setResult({
         success: false,
-        message: 'Failed to connect to CallFluent API. Please check your API key and endpoint.'
+        message: 'Failed to connect to CallFluent AI webhook. Please check your webhook URL.'
       });
     } finally {
       setLoading(false);
@@ -58,10 +61,10 @@ const CallfluentTester = ({ apiKey }: CallfluentTesterProps) => {
         variant="outlined"
         color="primary"
         onClick={testConnection}
-        disabled={loading || !apiKey}
+        disabled={loading || !webhookEndpoint}
         startIcon={loading ? <CircularProgress size={20} /> : null}
       >
-        {loading ? 'Testing Connection...' : 'Test CallFluent Connection'}
+        {loading ? 'Testing Connection...' : 'Test CallFluent Webhook'}
       </Button>
       
       {result && (
@@ -71,12 +74,12 @@ const CallfluentTester = ({ apiKey }: CallfluentTesterProps) => {
           </Alert>
           {result.success && (
             <Typography variant="body2" sx={{ mt: 1 }}>
-              Your CallFluent API integration is working correctly. The system will now be able to make automated calls for reservation confirmations and reminders.
+              Your CallFluent AI webhook integration is working correctly. The system will now be able to make automated calls for reservation confirmations and reminders.
             </Typography>
           )}
           {!result.success && (
             <Typography variant="body2" sx={{ mt: 1 }}>
-              Please check your API key and endpoint URL. Make sure your CallFluent account is active and has sufficient credits for making calls.
+              Please check your webhook URL. Make sure your CallFluent account is active and the webhook URL is correctly configured.
             </Typography>
           )}
         </Paper>

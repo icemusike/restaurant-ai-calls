@@ -34,8 +34,7 @@ const Settings = () => {
   
   const webhookUrl = window.location.origin + '/api/webhook/callfluent';
   const [callfluentSettings, setCallfluentSettings] = useState({
-    apiKey: '',
-    apiEndpoint: 'https://api.callfluent.ai/v1',
+    webhookEndpoint: '',
     callbackNumber: '',
     autoCallEnabled: false
   });
@@ -240,28 +239,18 @@ const Settings = () => {
                 Outgoing API Configuration
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Configure CallFluent AI API to automatically make calls when new reservations are added.
+                Configure CallFluent AI webhook to automatically make calls when new reservations are added.
               </Typography>
               
               <Grid container spacing={2}>
                 <Grid item xs={12}>
                   <TextField
-                    name="apiKey"
-                    label="CallFluent API Key"
+                    name="webhookEndpoint"
+                    label="CallFluent Webhook URL"
                     fullWidth
-                    value={callfluentSettings.apiKey}
+                    value={callfluentSettings.webhookEndpoint}
                     onChange={handleCallfluentChange}
-                    type="password"
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    name="apiEndpoint"
-                    label="API Endpoint"
-                    fullWidth
-                    value={callfluentSettings.apiEndpoint}
-                    onChange={handleCallfluentChange}
-                    helperText="Default: https://api.callfluent.ai/v1"
+                    helperText="Enter the webhook URL provided by CallFluent AI"
                   />
                 </Grid>
                 <Grid item xs={12}>
@@ -297,8 +286,7 @@ const Settings = () => {
                 </Grid>
                 <Grid item xs={12} sx={{ mt: 2 }}>
                   <CallfluentTester 
-                    apiKey={callfluentSettings.apiKey}
-                    apiEndpoint={callfluentSettings.apiEndpoint}
+                    webhookEndpoint={callfluentSettings.webhookEndpoint}
                   />
                 </Grid>
               </Grid>
