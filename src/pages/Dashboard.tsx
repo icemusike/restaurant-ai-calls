@@ -221,8 +221,8 @@ const Dashboard = () => {
       
       // Prepare payload for CallFluent
       const payload: CallFluentPayload = {
-        customerName: reservation.customerName,
-        phoneNumber: reservation.phoneNumber,
+        name: reservation.customerName,
+        phone_number: reservation.phoneNumber,
         date: formattedDate,
         time: formattedTime,
         partySize: reservation.partySize,
@@ -233,17 +233,33 @@ const Dashboard = () => {
       console.log('Sending to webhook:', settings.webhookEndpoint);
       console.log('Payload:', payload);
       
-      // Add timeout and headers to improve reliability
-      const response = await axios.post(settings.webhookEndpoint, payload, {
-        timeout: 10000,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
+      // Use our own dedicated webhook endpoint if we're on vercel
+      const isVercel = window.location.hostname.includes('vercel.app');
       
-      console.log('Webhook response:', response.data);
-      showSnackbar('Reservation data sent to CallFluent AI for automated call', 'info');
+      if (isVercel) {
+        console.log('Using dedicated webhook endpoint for Vercel');
+        try {
+          // First try to send to our internal webhook endpoint that handles Supabase directly
+          const internalResponse = await axios.post('/api/webhook-create', payload, {
+            timeout: 10000,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          });
+          
+          console.log('Internal webhook response:', internalResponse.data);
+          showSnackbar('Reservation data processed internally and sent to CallFluent AI', 'info');
+        } catch (internalError) {
+          console.error('Error with internal webhook processing:', internalError);
+          // Fall back to external webhook if internal fails
+          await sendToExternalWebhook(settings.webhookEndpoint, payload);
+        }
+      } else {
+        // If not on Vercel, send directly to external webhook
+        await sendToExternalWebhook(settings.webhookEndpoint, payload);
+      }
+      
       return true;
     } catch (error) {
       console.error('Error sending data to CallFluent webhook:', error);
@@ -252,10 +268,25 @@ const Dashboard = () => {
     }
   };
 
+  // Helper function to send to external webhook
+  const sendToExternalWebhook = async (webhookUrl: string, payload: CallFluentPayload) => {
+    const response = await axios.post(webhookUrl, payload, {
+      timeout: 10000,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log('External webhook response:', response.data);
+    showSnackbar('Reservation data sent to CallFluent AI for automated call', 'info');
+    return response;
+  };
+
   const handleSaveReservation = async (reservationData: Omit<Reservation, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       if (selectedReservation) {
-        // Update existing reservation
+        // Update existing reservation - keep using the regular endpoint
         const response = await axios.put(`/api/reservations/${selectedReservation.id}`, reservationData);
         if (response.data.success) {
           setReservations(prev => 
@@ -266,8 +297,31 @@ const Dashboard = () => {
           showSnackbar(response.data.error || 'Failed to update reservation', 'error');
         }
       } else {
-        // Create new reservation
+        // Create new reservation - use the dedicated Supabase endpoint
+        console.log('Creating new reservation with dedicated endpoint');
+        
+        // First, try the dedicated Supabase endpoint
+        try {
+          const response = await axios.post('/api/supabase-create', reservationData);
+          
+          if (response.data.success) {
+            const newReservation = response.data.data;
+            setReservations(prev => [...prev, newReservation]);
+            showSnackbar('Reservation created successfully', 'success');
+            
+            // Send to CallFluent webhook for automated call
+            await sendToCallfluentWebhook(newReservation);
+            return; // Early return if successful
+          }
+        } catch (supabaseError) {
+          console.error('Error using dedicated Supabase endpoint:', supabaseError);
+          // Continue to fallback
+        }
+        
+        // Fallback to regular endpoint if dedicated endpoint fails
+        console.log('Falling back to regular API endpoint');
         const response = await axios.post('/api/reservations', reservationData);
+        
         if (response.data.success) {
           const newReservation = response.data.data;
           setReservations(prev => [...prev, newReservation]);

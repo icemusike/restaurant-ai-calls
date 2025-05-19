@@ -32,12 +32,13 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
+// Type for CallFluent AI webhook payload
 export interface CallFluentPayload {
-  customerName: string;
-  phoneNumber: string;
+  name: string;
+  phone_number: string;
   date: string;
   time: string;
   partySize: number;
-  notes: string;
-  reservationId: string;
+  notes?: string;
+  reservationId?: string;
 }
