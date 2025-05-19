@@ -9,7 +9,7 @@ import swaggerUi from 'swagger-ui-express';
 import { Reservation, ApiResponse } from '../types';
 import { createCallfluentService } from './callfluentService';
 import { reservationService } from './reservationService';
-import './.env'; // Import to ensure environment variables are loaded
+import './.env.js'; // Import to ensure environment variables are loaded
 
 const app = express();
 const PORT = process.env.PORT || 3001;

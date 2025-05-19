@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
-import { VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY } from './.env';
+import * as env from './.env.js';
 
 // Initialize Supabase client
-const supabaseUrl = VITE_SUPABASE_URL || '';
-const supabaseKey = VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = env.VITE_SUPABASE_URL || '';
+const supabaseKey = env.VITE_SUPABASE_ANON_KEY || '';
 
 // Check if the environment variables are set
 if (!supabaseUrl || !supabaseKey) {
