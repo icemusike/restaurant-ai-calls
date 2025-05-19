@@ -35,7 +35,7 @@ export class CallfluentService {
       const response = await axios.post(
         `${this.settings.apiEndpoint}/calls`,
         {
-          phoneNumber: reservation.phoneNumber,
+          phone_number: reservation.phoneNumber,
           callbackNumber: this.settings.callbackNumber,
           message: message,
           reservationId: reservation.id,
@@ -43,7 +43,7 @@ export class CallfluentService {
             reservationDate: reservation.date,
             reservationTime: reservation.time,
             partySize: reservation.partySize,
-            customerName: reservation.customerName
+            name: reservation.customerName
           }
         },
         {
@@ -100,7 +100,7 @@ export class CallfluentService {
       const response = await axios.post(
         `${this.settings.apiEndpoint}/calls`,
         {
-          phoneNumber: reservation.phoneNumber,
+          phone_number: reservation.phoneNumber,
           callbackNumber: this.settings.callbackNumber,
           message: message,
           reservationId: reservation.id,
@@ -108,7 +108,7 @@ export class CallfluentService {
             reservationDate: reservation.date,
             reservationTime: reservation.time,
             partySize: reservation.partySize,
-            customerName: reservation.customerName,
+            name: reservation.customerName,
             callType: 'reminder'
           }
         },

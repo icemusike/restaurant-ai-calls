@@ -30,8 +30,8 @@ const reservationSchema = z.object({
 });
 
 const callFluentPayloadSchema = z.object({
-  customerName: z.string().min(1, 'Customer name is required'),
-  phoneNumber: z.string().min(1, 'Phone number is required'),
+  name: z.string().min(1, 'Customer name is required'),
+  phone_number: z.string().min(1, 'Phone number is required'),
   date: z.string(),
   time: z.string(),
   partySize: z.number().int().positive('Party size must be a positive integer'),
@@ -287,8 +287,8 @@ app.post('/api/webhook/callfluent', (req, res) => {
     
     const newReservation = {
       id: uuidv4(),
-      customerName: payload.customerName,
-      phoneNumber: payload.phoneNumber,
+      customerName: payload.name,
+      phoneNumber: payload.phone_number,
       date: formattedDate,
       time: formattedTime,
       partySize: payload.partySize,

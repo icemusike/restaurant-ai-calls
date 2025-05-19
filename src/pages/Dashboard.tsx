@@ -221,8 +221,8 @@ const Dashboard = () => {
       
       // Prepare payload for CallFluent
       const payload: CallFluentPayload = {
-        customerName: reservation.customerName,
-        phoneNumber: reservation.phoneNumber,
+        name: reservation.customerName,
+        phone_number: reservation.phoneNumber,
         date: formattedDate,
         time: formattedTime,
         partySize: reservation.partySize,

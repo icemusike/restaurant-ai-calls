@@ -33,8 +33,8 @@ export interface ApiResponse<T> {
 }
 
 export interface CallFluentPayload {
-  customerName: string;
-  phoneNumber: string;
+  name: string;
+  phone_number: string;
   date: string;
   time: string;
   partySize: number;
