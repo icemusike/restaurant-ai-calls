@@ -38,5 +38,6 @@ export interface CallFluentPayload {
   date: string;
   time: string;
   partySize: number;
-  notes?: string;
+  notes: string;
+  reservationId: string;
 }

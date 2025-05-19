@@ -207,23 +207,48 @@ const Dashboard = () => {
         return;
       }
       
+      // Format date and time for better compatibility
+      const dateObj = new Date(reservation.date);
+      const formattedDate = format(dateObj, 'yyyy-MM-dd');
+      
+      // Convert 24h time to 12h time for better readability
+      const timeParts = reservation.time.split(':');
+      const hour = parseInt(timeParts[0]);
+      const minute = timeParts[1];
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      const formattedTime = `${hour12}:${minute} ${ampm}`;
+      
       // Prepare payload for CallFluent
       const payload: CallFluentPayload = {
         customerName: reservation.customerName,
         phoneNumber: reservation.phoneNumber,
-        date: reservation.date,
-        time: reservation.time,
+        date: formattedDate,
+        time: formattedTime,
         partySize: reservation.partySize,
-        notes: reservation.notes
+        notes: reservation.notes || '',
+        reservationId: reservation.id
       };
       
-      // Send data to CallFluent webhook
-      await axios.post(settings.webhookEndpoint, payload);
-      console.log('Reservation data sent to CallFluent webhook');
+      console.log('Sending to webhook:', settings.webhookEndpoint);
+      console.log('Payload:', payload);
       
+      // Add timeout and headers to improve reliability
+      const response = await axios.post(settings.webhookEndpoint, payload, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      
+      console.log('Webhook response:', response.data);
       showSnackbar('Reservation data sent to CallFluent AI for automated call', 'info');
+      return true;
     } catch (error) {
       console.error('Error sending data to CallFluent webhook:', error);
+      showSnackbar('Failed to send data to CallFluent AI. Please check webhook settings.', 'error');
+      return false;
     }
   };
 
@@ -354,9 +379,11 @@ const Dashboard = () => {
       }
       
       // Send to CallFluent webhook for reminder call
-      await sendToCallfluentWebhook(reservation);
+      const success = await sendToCallfluentWebhook(reservation);
       
-      showSnackbar('Reminder call triggered successfully', 'success');
+      if (success) {
+        showSnackbar('Reminder call triggered successfully', 'success');
+      }
     } catch (error) {
       console.error('Error triggering reminder call:', error);
       showSnackbar('Failed to trigger reminder call', 'error');
