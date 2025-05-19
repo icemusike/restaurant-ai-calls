@@ -297,40 +297,71 @@ const Dashboard = () => {
           showSnackbar(response.data.error || 'Failed to update reservation', 'error');
         }
       } else {
-        // Create new reservation - use the dedicated Supabase endpoint
-        console.log('Creating new reservation with dedicated endpoint');
+        // Create new reservation - use the simplest endpoint first, then try others as fallback
+        console.log('Creating new reservation with simplified endpoint');
         
-        // First, try the dedicated Supabase endpoint
-        try {
-          const response = await axios.post('/api/supabase-create', reservationData);
-          
-          if (response.data.success) {
-            const newReservation = response.data.data;
-            setReservations(prev => [...prev, newReservation]);
-            showSnackbar('Reservation created successfully', 'success');
+        // Try different endpoints in order of simplicity
+        const endpoints = [
+          '/api/simpledb',             // Simplest endpoint - minimal code
+          '/api/supabase-create',      // More complex but with better validation
+          '/api/reservations'          // Original endpoint as final fallback
+        ];
+        
+        let success = false;
+        let lastError = null;
+        
+        // Try each endpoint in sequence until one works
+        for (const endpoint of endpoints) {
+          try {
+            console.log(`Trying endpoint: ${endpoint}`);
+            const response = await axios.post(endpoint, reservationData, {
+              timeout: 10000 // 10 second timeout
+            });
             
-            // Send to CallFluent webhook for automated call
-            await sendToCallfluentWebhook(newReservation);
-            return; // Early return if successful
+            if (response.data.success) {
+              const newReservation = response.data.data;
+              setReservations(prev => [...prev, newReservation]);
+              showSnackbar('Reservation created successfully', 'success');
+              
+              // Send to CallFluent webhook for automated call
+              await sendToCallfluentWebhook(newReservation);
+              success = true;
+              break; // Exit the loop if successful
+            }
+          } catch (error) {
+            console.error(`Error with endpoint ${endpoint}:`, error);
+            lastError = error;
+            // Continue to next endpoint
           }
-        } catch (supabaseError) {
-          console.error('Error using dedicated Supabase endpoint:', supabaseError);
-          // Continue to fallback
         }
         
-        // Fallback to regular endpoint if dedicated endpoint fails
-        console.log('Falling back to regular API endpoint');
-        const response = await axios.post('/api/reservations', reservationData);
-        
-        if (response.data.success) {
-          const newReservation = response.data.data;
-          setReservations(prev => [...prev, newReservation]);
-          showSnackbar('Reservation created successfully', 'success');
+        if (!success) {
+          console.error('All endpoints failed:', lastError);
+          showSnackbar('Error connecting to the server. Please try again.', 'error');
           
-          // Send to CallFluent webhook for automated call
-          await sendToCallfluentWebhook(newReservation);
-        } else {
-          showSnackbar(response.data.error || 'Failed to create reservation', 'error');
+          // For demo purposes, simulate successful save
+          const now = new Date().toISOString();
+          const newReservation: Reservation = {
+            ...reservationData,
+            id: selectedReservation?.id || `demo-${Math.random().toString(36).substring(2, 9)}`,
+            createdAt: selectedReservation?.createdAt || now,
+            updatedAt: now,
+          };
+          
+          if (selectedReservation) {
+            // Update existing reservation
+            setReservations(prev => 
+              prev.map(r => r.id === selectedReservation.id ? newReservation : r)
+            );
+          } else {
+            // Create new reservation
+            setReservations(prev => [...prev, newReservation]);
+            
+            // Send to CallFluent webhook for automated call (demo)
+            await sendToCallfluentWebhook(newReservation);
+          }
+          
+          showSnackbar('Reservation saved successfully (DEMO MODE)', 'success');
         }
       }
     } catch (err) {
@@ -341,7 +372,7 @@ const Dashboard = () => {
       const now = new Date().toISOString();
       const newReservation: Reservation = {
         ...reservationData,
-        id: selectedReservation?.id || Math.random().toString(36).substring(2, 9),
+        id: selectedReservation?.id || `demo-${Math.random().toString(36).substring(2, 9)}`,
         createdAt: selectedReservation?.createdAt || now,
         updatedAt: now,
       };
@@ -359,7 +390,7 @@ const Dashboard = () => {
         await sendToCallfluentWebhook(newReservation);
       }
       
-      showSnackbar('Reservation saved successfully', 'success');
+      showSnackbar('Reservation saved successfully (DEMO MODE)', 'success');
     }
   };
 
