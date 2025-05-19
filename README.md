@@ -106,3 +106,22 @@ restaurant-reservation-system/
 ## License
 
 MIT
+
+## Database Setup
+
+This application can use either a local JSON file (default) or Supabase for data storage.
+
+### Supabase Database Setup
+
+1. Create a free Supabase account at [https://supabase.com](https://supabase.com)
+2. Create a new project in Supabase
+3. In your project, go to SQL Editor and run the SQL script located in `supabase/schema.sql` to create the necessary tables and types
+4. Get your Supabase URL and anon key from the project settings > API section
+5. Add these values to your `.env` file:
+
+```
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+With these settings, the application will automatically use Supabase as the database. If the Supabase configuration is missing, the app will fallback to the local JSON file storage.

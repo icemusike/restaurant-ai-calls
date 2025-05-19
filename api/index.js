@@ -6,6 +6,7 @@ const bodyParser = require('body-parser');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const { z } = require('zod');
+const { createClient } = require('@supabase/supabase-js');
 
 // Initialize Express app
 const app = express();
@@ -14,8 +15,50 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Database path (in-memory for Vercel)
-let database = { reservations: [] };
+// Initialize Supabase client
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// In-memory database for fallback when Supabase isn't configured
+const database = {
+  reservations: []
+};
+
+// Helper function to check if Supabase is configured
+const isSupabaseConfigured = () => {
+  return supabaseUrl && supabaseKey;
+};
+
+// Helper functions for Supabase
+const mapDbToReservation = (dbReservation) => {
+  return {
+    id: dbReservation.id,
+    customerName: dbReservation.customer_name,
+    phoneNumber: dbReservation.phone_number,
+    date: dbReservation.date,
+    time: dbReservation.time,
+    partySize: dbReservation.party_size,
+    source: dbReservation.source,
+    status: dbReservation.status,
+    notes: dbReservation.notes || '',
+    createdAt: dbReservation.created_at,
+    updatedAt: dbReservation.updated_at,
+  };
+};
+
+const mapReservationToDb = (reservation) => {
+  return {
+    customer_name: reservation.customerName,
+    phone_number: reservation.phoneNumber,
+    date: reservation.date,
+    time: reservation.time,
+    party_size: reservation.partySize,
+    source: reservation.source,
+    status: reservation.status,
+    notes: reservation.notes,
+  };
+};
 
 // Validation schemas
 const reservationSchema = z.object({
@@ -39,12 +82,27 @@ const callFluentPayloadSchema = z.object({
 });
 
 // API routes
-app.get('/api/reservations', (req, res) => {
+app.get('/api/reservations', async (req, res) => {
   try {
-    res.json({
-      success: true,
-      data: database.reservations,
-    });
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('*')
+        .order('date', { ascending: true })
+        .order('time', { ascending: true });
+        
+      if (error) throw error;
+      
+      res.json({
+        success: true,
+        data: data.map(mapDbToReservation),
+      });
+    } else {
+      res.json({
+        success: true,
+        data: database.reservations,
+      });
+    }
   } catch (error) {
     console.error('Error fetching reservations:', error);
     res.status(500).json({
@@ -54,22 +112,43 @@ app.get('/api/reservations', (req, res) => {
   }
 });
 
-app.get('/api/reservations/:id', (req, res) => {
+app.get('/api/reservations/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const reservation = database.reservations.find(r => r.id === id);
     
-    if (!reservation) {
-      return res.status(404).json({
-        success: false,
-        error: 'Reservation not found',
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (error) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found',
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: mapDbToReservation(data),
+      });
+    } else {
+      const reservation = database.reservations.find(r => r.id === id);
+      
+      if (!reservation) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found',
+        });
+      }
+      
+      res.json({
+        success: true,
+        data: reservation,
       });
     }
-    
-    res.json({
-      success: true,
-      data: reservation,
-    });
   } catch (error) {
     console.error('Error fetching reservation:', error);
     res.status(500).json({
@@ -92,19 +171,36 @@ app.post('/api/reservations', async (req, res) => {
     
     const now = new Date().toISOString();
     
-    const newReservation = {
-      id: uuidv4(),
-      ...validationResult.data,
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    database.reservations.push(newReservation);
-    
-    res.status(201).json({
-      success: true,
-      data: newReservation,
-    });
+    if (isSupabaseConfigured()) {
+      const dbReservation = mapReservationToDb(validationResult.data);
+      
+      const { data, error } = await supabase
+        .from('reservations')
+        .insert(dbReservation)
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      res.status(201).json({
+        success: true,
+        data: mapDbToReservation(data),
+      });
+    } else {
+      const newReservation = {
+        id: uuidv4(),
+        ...validationResult.data,
+        createdAt: now,
+        updatedAt: now,
+      };
+      
+      database.reservations.push(newReservation);
+      
+      res.status(201).json({
+        success: true,
+        data: newReservation,
+      });
+    }
   } catch (error) {
     console.error('Error creating reservation:', error);
     res.status(500).json({
@@ -114,7 +210,7 @@ app.post('/api/reservations', async (req, res) => {
   }
 });
 
-app.put('/api/reservations/:id', (req, res) => {
+app.put('/api/reservations/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const validationResult = reservationSchema.safeParse(req.body);
@@ -126,27 +222,59 @@ app.put('/api/reservations/:id', (req, res) => {
       });
     }
     
-    const index = database.reservations.findIndex(r => r.id === id);
-    
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        error: 'Reservation not found',
+    if (isSupabaseConfigured()) {
+      // Check if reservation exists
+      const { data: existingData, error: existingError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (existingError || !existingData) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found',
+        });
+      }
+      
+      const dbReservation = mapReservationToDb(validationResult.data);
+      
+      const { data, error } = await supabase
+        .from('reservations')
+        .update(dbReservation)
+        .eq('id', id)
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      res.json({
+        success: true,
+        data: mapDbToReservation(data),
+      });
+    } else {
+      const index = database.reservations.findIndex(r => r.id === id);
+      
+      if (index === -1) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found',
+        });
+      }
+      
+      const updatedReservation = {
+        ...database.reservations[index],
+        ...validationResult.data,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      database.reservations[index] = updatedReservation;
+      
+      res.json({
+        success: true,
+        data: updatedReservation,
       });
     }
-    
-    const updatedReservation = {
-      ...database.reservations[index],
-      ...validationResult.data,
-      updatedAt: new Date().toISOString(),
-    };
-    
-    database.reservations[index] = updatedReservation;
-    
-    res.json({
-      success: true,
-      data: updatedReservation,
-    });
   } catch (error) {
     console.error('Error updating reservation:', error);
     res.status(500).json({
@@ -168,22 +296,52 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
       });
     }
     
-    const index = database.reservations.findIndex(r => r.id === id);
-    
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        error: 'Reservation not found',
+    if (isSupabaseConfigured()) {
+      // Check if reservation exists
+      const { data: existingData, error: existingError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (existingError || !existingData) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found',
+        });
+      }
+      
+      const { data, error } = await supabase
+        .from('reservations')
+        .update({ status })
+        .eq('id', id)
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      res.json({
+        success: true,
+        data: mapDbToReservation(data),
+      });
+    } else {
+      const index = database.reservations.findIndex(r => r.id === id);
+      
+      if (index === -1) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found',
+        });
+      }
+      
+      database.reservations[index].status = status;
+      database.reservations[index].updatedAt = new Date().toISOString();
+      
+      res.json({
+        success: true,
+        data: database.reservations[index],
       });
     }
-    
-    database.reservations[index].status = status;
-    database.reservations[index].updatedAt = new Date().toISOString();
-    
-    res.json({
-      success: true,
-      data: database.reservations[index],
-    });
   } catch (error) {
     console.error('Error updating reservation status:', error);
     res.status(500).json({
@@ -193,23 +351,51 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
   }
 });
 
-app.delete('/api/reservations/:id', (req, res) => {
+app.delete('/api/reservations/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const index = database.reservations.findIndex(r => r.id === id);
     
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        error: 'Reservation not found',
+    if (isSupabaseConfigured()) {
+      // Check if reservation exists
+      const { data: existingData, error: existingError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (existingError || !existingData) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found',
+        });
+      }
+      
+      const { error } = await supabase
+        .from('reservations')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      res.json({
+        success: true,
+      });
+    } else {
+      const index = database.reservations.findIndex(r => r.id === id);
+      
+      if (index === -1) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found',
+        });
+      }
+      
+      database.reservations.splice(index, 1);
+      
+      res.json({
+        success: true,
       });
     }
-    
-    database.reservations.splice(index, 1);
-    
-    res.json({
-      success: true,
-    });
   } catch (error) {
     console.error('Error deleting reservation:', error);
     res.status(500).json({
@@ -219,7 +405,7 @@ app.delete('/api/reservations/:id', (req, res) => {
   }
 });
 
-app.post('/api/webhook/callfluent', (req, res) => {
+app.post('/api/webhook/callfluent', async (req, res) => {
   try {
     console.log('Received webhook from CallFluent AI:', req.body);
     
@@ -285,28 +471,56 @@ app.post('/api/webhook/callfluent', (req, res) => {
     
     const now = new Date().toISOString();
     
-    const newReservation = {
-      id: uuidv4(),
-      customerName: payload.name,
-      phoneNumber: payload.phone_number,
-      date: formattedDate,
-      time: formattedTime,
-      partySize: payload.partySize,
-      source: 'AI Call',
-      status: 'Pending',
-      notes: payload.notes,
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    database.reservations.push(newReservation);
-    
-    console.log('Created new reservation from CallFluent AI:', newReservation);
-    
-    res.status(201).json({
-      success: true,
-      data: newReservation,
-    });
+    if (isSupabaseConfigured()) {
+      const reservationData = {
+        customer_name: payload.name,
+        phone_number: payload.phone_number,
+        date: formattedDate,
+        time: formattedTime,
+        party_size: payload.partySize,
+        source: 'AI Call',
+        status: 'Pending',
+        notes: payload.notes || '',
+      };
+      
+      const { data, error } = await supabase
+        .from('reservations')
+        .insert(reservationData)
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      console.log('Created new reservation from CallFluent AI:', data);
+      
+      res.status(201).json({
+        success: true,
+        data: mapDbToReservation(data),
+      });
+    } else {
+      const newReservation = {
+        id: uuidv4(),
+        customerName: payload.name,
+        phoneNumber: payload.phone_number,
+        date: formattedDate,
+        time: formattedTime,
+        partySize: payload.partySize,
+        source: 'AI Call',
+        status: 'Pending',
+        notes: payload.notes || '',
+        createdAt: now,
+        updatedAt: now,
+      };
+      
+      database.reservations.push(newReservation);
+      
+      console.log('Created new reservation from CallFluent AI:', newReservation);
+      
+      res.status(201).json({
+        success: true,
+        data: newReservation,
+      });
+    }
   } catch (error) {
     console.error('Error processing CallFluent webhook:', error);
     res.status(500).json({
@@ -335,13 +549,29 @@ app.post('/api/callfluent/test', async (req, res) => {
 app.post('/api/callfluent/trigger-reminder/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const reservation = database.reservations.find(r => r.id === id);
     
-    if (!reservation) {
-      return res.status(404).json({
-        success: false,
-        error: 'Reservation not found'
-      });
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (error || !data) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found'
+        });
+      }
+    } else {
+      const reservation = database.reservations.find(r => r.id === id);
+      
+      if (!reservation) {
+        return res.status(404).json({
+          success: false,
+          error: 'Reservation not found'
+        });
+      }
     }
     
     // For Vercel deployment, just return success
@@ -406,8 +636,10 @@ const addSampleData = () => {
   ];
 };
 
-// Add sample data
-addSampleData();
+// Add sample data only for in-memory database (not Supabase)
+if (!isSupabaseConfigured()) {
+  addSampleData();
+}
 
 // Export the Express API
 module.exports = app;

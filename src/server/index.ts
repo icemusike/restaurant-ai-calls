@@ -2,48 +2,20 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { v4 as uuidv4 } from 'uuid';
-import fs from 'fs';
 import path from 'path';
+import { z } from 'zod';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
-import { z } from 'zod';
 import { Reservation, ApiResponse } from '../types';
 import { createCallfluentService } from './callfluentService';
+import reservationService from '../services/reservationService';
 
-// Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-
-// Database path (JSON file for simplicity)
-const DB_PATH = path.join(__dirname, 'db.json');
-
-// Initialize database if it doesn't exist
-if (!fs.existsSync(DB_PATH)) {
-  fs.writeFileSync(DB_PATH, JSON.stringify({ reservations: [] }));
-}
-
-// Helper functions for database operations
-const readDatabase = (): { reservations: Reservation[] } => {
-  try {
-    const data = fs.readFileSync(DB_PATH, 'utf8');
-    return JSON.parse(data);
-  } catch (error) {
-    console.error('Error reading database:', error);
-    return { reservations: [] };
-  }
-};
-
-const writeDatabase = (data: { reservations: Reservation[] }): void => {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-  } catch (error) {
-    console.error('Error writing to database:', error);
-  }
-};
 
 // Validation schemas
 const reservationSchema = z.object({
@@ -97,12 +69,12 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
  *       200:
  *         description: List of all reservations
  */
-app.get('/api/reservations', (_req, res) => {
+app.get('/api/reservations', async (_req, res) => {
   try {
-    const db = readDatabase();
+    const reservations = await reservationService.getReservations();
     const response: ApiResponse<Reservation[]> = {
       success: true,
-      data: db.reservations,
+      data: reservations,
     };
     res.json(response);
   } catch (error) {
@@ -132,11 +104,10 @@ app.get('/api/reservations', (_req, res) => {
  *       404:
  *         description: Reservation not found
  */
-app.get('/api/reservations/:id', (req, res) => {
+app.get('/api/reservations/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const db = readDatabase();
-    const reservation = db.reservations.find(r => r.id === id);
+    const reservation = await reservationService.getReservation(id);
     
     if (!reservation) {
       const response: ApiResponse<null> = {
@@ -190,21 +161,8 @@ app.post('/api/reservations', async (req, res) => {
       return res.status(400).json(response);
     }
     
-    const db = readDatabase();
-    const now = new Date().toISOString();
-    
-    const newReservation: Reservation = {
-      id: uuidv4(),
-      ...validationResult.data,
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    db.reservations.push(newReservation);
-    writeDatabase(db);
-    
-    // Send SMS notification if enabled (would be implemented with Twilio)
-    // sendSmsNotification(newReservation);
+    // Create the reservation in Supabase
+    const newReservation = await reservationService.createReservation(validationResult.data);
     
     // Trigger CallFluent AI call if enabled
     const callfluentService = createCallfluentService();
@@ -256,7 +214,7 @@ app.post('/api/reservations', async (req, res) => {
  *       404:
  *         description: Reservation not found
  */
-app.put('/api/reservations/:id', (req, res) => {
+app.put('/api/reservations/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const validationResult = reservationSchema.safeParse(req.body);
@@ -269,10 +227,9 @@ app.put('/api/reservations/:id', (req, res) => {
       return res.status(400).json(response);
     }
     
-    const db = readDatabase();
-    const index = db.reservations.findIndex(r => r.id === id);
-    
-    if (index === -1) {
+    // Check if reservation exists
+    const existingReservation = await reservationService.getReservation(id);
+    if (!existingReservation) {
       const response: ApiResponse<null> = {
         success: false,
         error: 'Reservation not found',
@@ -280,14 +237,8 @@ app.put('/api/reservations/:id', (req, res) => {
       return res.status(404).json(response);
     }
     
-    const updatedReservation: Reservation = {
-      ...db.reservations[index],
-      ...validationResult.data,
-      updatedAt: new Date().toISOString(),
-    };
-    
-    db.reservations[index] = updatedReservation;
-    writeDatabase(db);
+    // Update the reservation in Supabase
+    const updatedReservation = await reservationService.updateReservation(id, validationResult.data);
     
     const response: ApiResponse<Reservation> = {
       success: true,
@@ -346,10 +297,9 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
       return res.status(400).json(response);
     }
     
-    const db = readDatabase();
-    const index = db.reservations.findIndex(r => r.id === id);
-    
-    if (index === -1) {
+    // Check if reservation exists
+    const existingReservation = await reservationService.getReservation(id);
+    if (!existingReservation) {
       const response: ApiResponse<null> = {
         success: false,
         error: 'Reservation not found',
@@ -357,17 +307,20 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
       return res.status(404).json(response);
     }
     
-    const oldStatus = db.reservations[index].status;
-    db.reservations[index].status = status as 'Pending' | 'Confirmed' | 'Cancelled';
-    db.reservations[index].updatedAt = new Date().toISOString();
-    writeDatabase(db);
+    const oldStatus = existingReservation.status;
+    
+    // Update status in Supabase
+    const updatedReservation = await reservationService.updateReservationStatus(
+      id, 
+      status as 'Pending' | 'Confirmed' | 'Cancelled'
+    );
     
     // If status changed to Confirmed, trigger a confirmation call via CallFluent
     if (status === 'Confirmed' && oldStatus !== 'Confirmed') {
       const callfluentService = createCallfluentService();
       if (callfluentService) {
         try {
-          await callfluentService.triggerConfirmationCall(db.reservations[index]);
+          await callfluentService.triggerConfirmationCall(updatedReservation);
         } catch (error) {
           console.error('Error triggering CallFluent confirmation call:', error);
         }
@@ -376,7 +329,7 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
     
     const response: ApiResponse<Reservation> = {
       success: true,
-      data: db.reservations[index],
+      data: updatedReservation,
     };
     res.json(response);
   } catch (error) {
@@ -406,13 +359,13 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
  *       404:
  *         description: Reservation not found
  */
-app.delete('/api/reservations/:id', (req, res) => {
+app.delete('/api/reservations/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const db = readDatabase();
-    const index = db.reservations.findIndex(r => r.id === id);
     
-    if (index === -1) {
+    // Check if reservation exists
+    const existingReservation = await reservationService.getReservation(id);
+    if (!existingReservation) {
       const response: ApiResponse<null> = {
         success: false,
         error: 'Reservation not found',
@@ -420,8 +373,8 @@ app.delete('/api/reservations/:id', (req, res) => {
       return res.status(404).json(response);
     }
     
-    db.reservations.splice(index, 1);
-    writeDatabase(db);
+    // Delete from Supabase
+    await reservationService.deleteReservation(id);
     
     const response: ApiResponse<null> = {
       success: true,
@@ -454,11 +407,11 @@ app.delete('/api/reservations/:id', (req, res) => {
  *       400:
  *         description: Invalid request data
  */
-app.post('/api/webhook/callfluent', (_req, res) => {
+app.post('/api/webhook/callfluent', async (req, res) => {
   try {
-    console.log('Received webhook from CallFluent AI:', _req.body);
+    console.log('Received webhook from CallFluent AI:', req.body);
     
-    const validationResult = callFluentPayloadSchema.safeParse(_req.body);
+    const validationResult = callFluentPayloadSchema.safeParse(req.body);
     
     if (!validationResult.success) {
       console.error('Invalid CallFluent payload:', validationResult.error.message);
@@ -521,28 +474,20 @@ app.post('/api/webhook/callfluent', (_req, res) => {
       formattedTime = `${formattedTime}:00`;
     }
     
-    const db = readDatabase();
-    const now = new Date().toISOString();
-    
-    const newReservation: Reservation = {
-      id: uuidv4(),
+    // Create new reservation from CallFluent webhook data
+    const reservationData = {
       customerName: payload.name,
       phoneNumber: payload.phone_number,
       date: formattedDate,
       time: formattedTime,
       partySize: payload.partySize,
-      source: 'AI Call',
-      status: 'Pending',
-      notes: payload.notes,
-      createdAt: now,
-      updatedAt: now,
+      source: 'AI Call' as const,
+      status: 'Pending' as const,
+      notes: payload.notes || '',
     };
     
-    db.reservations.push(newReservation);
-    writeDatabase(db);
-    
-    // Send SMS notification if enabled (would be implemented with Twilio)
-    // sendSmsNotification(newReservation);
+    // Save to Supabase
+    const newReservation = await reservationService.createReservation(reservationData);
     
     console.log('Created new reservation from CallFluent AI:', newReservation);
     
@@ -569,7 +514,7 @@ app.post('/api/webhook/callfluent', (_req, res) => {
  *     responses:
  *       200:
  *         description: Connection successful
- *       400:
+ *       500:
  *         description: Connection failed
  */
 app.post('/api/callfluent/test', async (_req, res) => {
@@ -582,21 +527,22 @@ app.post('/api/callfluent/test', async (_req, res) => {
       });
     }
     
-    // Simple test message to verify connection
+    // Create a test reservation to use for the connection test
     const testReservation: Reservation = {
       id: 'test-id',
       customerName: 'Test Customer',
-      phoneNumber: '+15551234567', // This should be a valid test number
+      phoneNumber: '+1234567890',
       date: new Date().toISOString().split('T')[0],
       time: '18:00:00',
       partySize: 2,
       source: 'Manual',
       status: 'Pending',
+      notes: 'This is a test reservation for API connection verification',
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
     
-    // We're not actually making the call, just testing the connection
+    // Call the service without actually triggering a real call
     const result = await callfluentService.triggerConfirmationCall(testReservation);
     
     if (result) {
@@ -605,7 +551,7 @@ app.post('/api/callfluent/test', async (_req, res) => {
         message: 'Successfully connected to CallFluent API'
       });
     } else {
-      return res.status(400).json({
+      return res.status(500).json({
         success: false,
         error: 'Failed to connect to CallFluent API'
       });
@@ -623,7 +569,7 @@ app.post('/api/callfluent/test', async (_req, res) => {
  * @swagger
  * /api/callfluent/trigger-reminder/{id}:
  *   post:
- *     summary: Manually trigger a reminder call for a reservation
+ *     summary: Trigger a reminder call for a reservation
  *     parameters:
  *       - in: path
  *         name: id
@@ -635,15 +581,15 @@ app.post('/api/callfluent/test', async (_req, res) => {
  *         description: Reminder call triggered successfully
  *       404:
  *         description: Reservation not found
- *       400:
- *         description: Failed to trigger call
+ *       500:
+ *         description: Error triggering reminder call
  */
 app.post('/api/callfluent/trigger-reminder/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const db = readDatabase();
-    const reservation = db.reservations.find(r => r.id === id);
     
+    // Find the reservation
+    const reservation = await reservationService.getReservation(id);
     if (!reservation) {
       return res.status(404).json({
         success: false,
@@ -651,6 +597,7 @@ app.post('/api/callfluent/trigger-reminder/:id', async (req, res) => {
       });
     }
     
+    // Initialize CallFluent service
     const callfluentService = createCallfluentService();
     if (!callfluentService) {
       return res.status(400).json({
@@ -659,6 +606,7 @@ app.post('/api/callfluent/trigger-reminder/:id', async (req, res) => {
       });
     }
     
+    // Trigger the reminder call
     const result = await callfluentService.triggerReminderCall(reservation);
     
     if (result) {
@@ -667,7 +615,7 @@ app.post('/api/callfluent/trigger-reminder/:id', async (req, res) => {
         message: 'Reminder call triggered successfully'
       });
     } else {
-      return res.status(400).json({
+      return res.status(500).json({
         success: false,
         error: 'Failed to trigger reminder call'
       });
@@ -681,8 +629,8 @@ app.post('/api/callfluent/trigger-reminder/:id', async (req, res) => {
   }
 });
 
-// Start the server
+// Start server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
   console.log(`API documentation available at http://localhost:${PORT}/api-docs`);
 });
