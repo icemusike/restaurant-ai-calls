@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import { Box, useMediaQuery, ThemeProvider, createTheme, PaletteMode } from '@mui/material'
+import { Box, useMediaQuery, ThemeProvider, createTheme, PaletteMode, Theme } from '@mui/material'
 import CssBaseline from '@mui/material/CssBaseline'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
@@ -77,7 +77,7 @@ const getDesignTokens = (mode: PaletteMode) => ({
           borderRadius: 8,
           textTransform: 'none',
           fontWeight: 600,
-        },
+        } as const,
       },
     },
     MuiCard: {
@@ -87,14 +87,14 @@ const getDesignTokens = (mode: PaletteMode) => ({
           boxShadow: mode === 'light' 
             ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
             : '0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.12)',
-        },
+        } as const,
       },
     },
     MuiPaper: {
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-        },
+        } as const,
       },
     },
     MuiSwitch: {
@@ -140,7 +140,7 @@ const getDesignTokens = (mode: PaletteMode) => ({
             backgroundColor: mode === 'light' ? '#e9e9ea' : '#39393D',
             opacity: 1,
           },
-        },
+        } as const,
       },
     },
     MuiAppBar: {
@@ -149,7 +149,7 @@ const getDesignTokens = (mode: PaletteMode) => ({
           boxShadow: mode === 'light' 
             ? '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
             : '0 1px 3px 0 rgba(0, 0, 0, 0.2), 0 1px 2px 0 rgba(0, 0, 0, 0.12)',
-        },
+        } as const,
       },
     },
     MuiDrawer: {
@@ -157,21 +157,21 @@ const getDesignTokens = (mode: PaletteMode) => ({
         paper: {
           backgroundColor: mode === 'light' ? '#ffffff' : '#1e1e1e',
           borderRight: `1px solid ${mode === 'light' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.12)'}`,
-        },
+        } as const,
       },
     },
     MuiDivider: {
       styleOverrides: {
         root: {
           borderColor: mode === 'light' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.12)',
-        },
+        } as const,
       },
     },
     MuiChip: {
       styleOverrides: {
         root: {
           fontWeight: 500,
-        },
+        } as const,
       },
     },
   },
@@ -198,7 +198,7 @@ function App() {
   });
   
   // Create theme based on current mode
-  const theme = useMemo(() => createTheme(getDesignTokens(mode)), [mode]);
+  const theme = useMemo(() => createTheme(getDesignTokens(mode) as any), [mode]);
 
   // Toggle between light and dark mode
   const toggleColorMode = () => {

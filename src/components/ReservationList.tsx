@@ -9,7 +9,6 @@ import {
   IconButton, 
   Menu, 
   MenuItem,
-  Badge,
   Divider,
   useTheme,
   Tooltip,

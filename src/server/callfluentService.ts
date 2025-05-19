@@ -132,13 +132,6 @@ export class CallfluentService {
    * Format a message for the AI to read during the reminder call
    */
   private formatReminderMessage(reservation: Reservation): string {
-    const date = new Date(reservation.date);
-    const formattedDate = date.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-    
     // Convert 24h time to 12h time for the message
     const timeParts = reservation.time.split(':');
     const hour = parseInt(timeParts[0]);

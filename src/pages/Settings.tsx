@@ -10,7 +10,6 @@ import {
   Divider,
   Alert,
   Snackbar,
-  Paper,
   Switch,
   FormControlLabel,
   InputAdornment,
@@ -20,7 +19,6 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { RestaurantContext } from '../contexts/RestaurantContext';
 import { ThemeContext } from '../contexts/ThemeContext';
 import CallfluentTester from '../components/CallfluentTester';
-import axios from 'axios';
 
 const Settings = () => {
   const { restaurant, setRestaurant } = useContext(RestaurantContext);
@@ -34,7 +32,7 @@ const Settings = () => {
     openingHours: restaurant.openingHours,
   });
   
-  const [webhookUrl, setWebhookUrl] = useState(window.location.origin + '/api/webhook/callfluent');
+  const webhookUrl = window.location.origin + '/api/webhook/callfluent';
   const [callfluentSettings, setCallfluentSettings] = useState({
     apiKey: '',
     apiEndpoint: 'https://api.callfluent.ai/v1',

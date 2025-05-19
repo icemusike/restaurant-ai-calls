@@ -14,7 +14,8 @@ import {
   MenuItem,
   Snackbar,
   Alert,
-  CircularProgress
+  CircularProgress,
+  SelectChangeEvent
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import AddIcon from '@mui/icons-material/Add';
@@ -268,7 +269,7 @@ const Dashboard = () => {
     });
   };
 
-  const handleStatusChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+  const handleStatusChange = (event: SelectChangeEvent) => {
     setFilters({
       ...filters,
       status: event.target.value as string | null,

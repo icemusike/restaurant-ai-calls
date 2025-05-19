@@ -7,7 +7,7 @@ import path from 'path';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { z } from 'zod';
-import { Reservation, CallFluentPayload, ApiResponse } from '../types';
+import { Reservation, ApiResponse } from '../types';
 import { createCallfluentService } from './callfluentService';
 
 // Initialize Express app
@@ -97,7 +97,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
  *       200:
  *         description: List of all reservations
  */
-app.get('/api/reservations', (req, res) => {
+app.get('/api/reservations', (_req, res) => {
   try {
     const db = readDatabase();
     const response: ApiResponse<Reservation[]> = {
@@ -358,7 +358,7 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
     }
     
     const oldStatus = db.reservations[index].status;
-    db.reservations[index].status = status;
+    db.reservations[index].status = status as 'Pending' | 'Confirmed' | 'Cancelled';
     db.reservations[index].updatedAt = new Date().toISOString();
     writeDatabase(db);
     
@@ -454,11 +454,11 @@ app.delete('/api/reservations/:id', (req, res) => {
  *       400:
  *         description: Invalid request data
  */
-app.post('/api/webhook/callfluent', (req, res) => {
+app.post('/api/webhook/callfluent', (_req, res) => {
   try {
-    console.log('Received webhook from CallFluent AI:', req.body);
+    console.log('Received webhook from CallFluent AI:', _req.body);
     
-    const validationResult = callFluentPayloadSchema.safeParse(req.body);
+    const validationResult = callFluentPayloadSchema.safeParse(_req.body);
     
     if (!validationResult.success) {
       console.error('Invalid CallFluent payload:', validationResult.error.message);
@@ -572,7 +572,7 @@ app.post('/api/webhook/callfluent', (req, res) => {
  *       400:
  *         description: Connection failed
  */
-app.post('/api/callfluent/test', async (req, res) => {
+app.post('/api/callfluent/test', async (_req, res) => {
   try {
     const callfluentService = createCallfluentService();
     if (!callfluentService) {

@@ -11,8 +11,8 @@ import {
   Select, 
   MenuItem, 
   Grid,
-  FormHelperText,
-  Box
+  Box,
+  SelectChangeEvent
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
@@ -101,6 +101,16 @@ const ReservationForm = ({ open, onClose, onSave, reservation }: ReservationForm
           [name]: '',
         });
       }
+    }
+  };
+
+  const handleSelectChange = (e: SelectChangeEvent<any>) => {
+    const { name, value } = e.target;
+    if (name) {
+      setFormData({
+        ...formData,
+        [name]: value,
+      });
     }
   };
 
@@ -271,7 +281,7 @@ const ReservationForm = ({ open, onClose, onSave, reservation }: ReservationForm
                 <Select
                   name="source"
                   value={formData.source}
-                  onChange={handleChange}
+                  onChange={handleSelectChange}
                   label="Source"
                 >
                   <MenuItem value="Manual">Manual</MenuItem>
@@ -285,7 +295,7 @@ const ReservationForm = ({ open, onClose, onSave, reservation }: ReservationForm
                 <Select
                   name="status"
                   value={formData.status}
-                  onChange={handleChange}
+                  onChange={handleSelectChange}
                   label="Status"
                 >
                   <MenuItem value="Pending">Pending</MenuItem>

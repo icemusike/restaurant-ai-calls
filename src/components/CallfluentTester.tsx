@@ -11,10 +11,10 @@ import axios from 'axios';
 
 interface CallfluentTesterProps {
   apiKey: string;
-  apiEndpoint: string;
+  apiEndpoint: string; // Keeping this for future use
 }
 
-const CallfluentTester = ({ apiKey, apiEndpoint }: CallfluentTesterProps) => {
+const CallfluentTester = ({ apiKey }: CallfluentTesterProps) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
     success: boolean;
