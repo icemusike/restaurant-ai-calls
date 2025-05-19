@@ -1,58 +1,41 @@
-// Simple diagnostic endpoint to check environment variables
+// Absolute minimal Vercel serverless function for testing
 module.exports = async (req, res) => {
-  // Enable CORS
+  // Enable CORS - still good practice even for a minimal test
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', '*'); // Be more restrictive in production
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
-  // Handle OPTIONS request
+  // Handle OPTIONS request for CORS preflight
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    console.log('[api/test-env] Received OPTIONS request');
+    res.status(200).end();
+    return;
   }
 
+  console.log('[api/test-env] Received GET request');
+
   try {
-    // Create response object with basic information
-    const response = {
+    const responsePayload = {
       success: true,
-      message: "Basic environment diagnostic information",
+      message: "Minimal test endpoint is working!",
       timestamp: new Date().toISOString(),
       environment: {
-        node_env: process.env.NODE_ENV || 'not set',
+        node_version: process.version,
         vercel_env: process.env.VERCEL_ENV || 'not set',
         is_vercel: !!process.env.VERCEL,
         region: process.env.VERCEL_REGION || 'not set',
-      },
-      supabase: {
-        url_available: false,
-        key_available: false,
-        available_variables: []
       }
     };
-
-    // Check what Supabase-related environment variables are available
-    for (const key in process.env) {
-      if (key.includes('SUPABASE')) {
-        response.supabase.available_variables.push(key);
-      }
-    }
-
-    // Check for Supabase credentials (without accessing their values)
-    response.supabase.url_available = !!process.env.SUPABASE_URL || 
-                                      !!process.env.NEXT_PUBLIC_SUPABASE_URL;
-    
-    response.supabase.key_available = !!process.env.SUPABASE_SERVICE_ROLE_KEY || 
-                                      !!process.env.SERVICE_ROLE_KEY || 
-                                      !!process.env.SUPABASE_ANON_KEY || 
-                                      !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    return res.status(200).json(response);
-  } catch (err) {
-    console.error('Error in diagnostic endpoint:', err);
-    return res.status(500).json({
+    console.log('[api/test-env] Sending response:', responsePayload);
+    res.status(200).json(responsePayload);
+  } catch (error) {
+    console.error('[api/test-env] Unexpected error in minimal function:', error);
+    res.status(500).json({
       success: false,
-      error: 'Internal server error',
-      message: err.message
+      error: "Minimal function crashed",
+      message: error.message,
+      stack: error.stack // Include stack trace for debugging
     });
   }
 }; 
