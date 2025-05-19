@@ -1,9 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../types/supabase';
 
-// These values should be set in your .env file
-const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+// These values should be set in your .env file and are exposed to the client by Vite
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string || '';
+
+// Log the values for debugging - remove in production
+console.log('Client Supabase URL:', supabaseUrl ? 'configured' : 'missing');
+console.log('Client Supabase Key:', supabaseAnonKey ? 'configured' : 'missing');
 
 // Check if the environment variables are set
 if (!supabaseUrl || !supabaseAnonKey) {
@@ -13,6 +16,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 // Create a single supabase client for interacting with your database
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default supabase; 
