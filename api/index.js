@@ -11,168 +11,14 @@ const dotenv = require('dotenv');
 // Load environment variables from .env file if present
 dotenv.config();
 
-// Log Supabase environment variables availability
-console.log('SUPABASE_URL is set:', !!process.env.SUPABASE_URL);
-console.log('SUPABASE_ANON_KEY is set:', !!process.env.SUPABASE_ANON_KEY);
-console.log('SUPABASE_SERVICE_ROLE_KEY is set:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-// Import our supabase services
-let reservationService;
-
-// Set up Supabase client and services
-async function importServices() {
-  try {
-    // Handle different import approaches
-    let createClient;
-    try {
-      // Try CommonJS require first
-      createClient = require('@supabase/supabase-js').createClient;
-    } catch (err) {
-      // If that fails, try ESM import
-      try {
-        const supabase = await import('@supabase/supabase-js');
-        createClient = supabase.createClient;
-      } catch (err2) {
-        console.error('Error importing Supabase:', err2);
-        return false;
-      }
-    }
-    
-    // Set up Supabase client 
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-    
-    if (!supabaseUrl || !supabaseKey) {
-      console.warn('Supabase credentials missing, falling back to in-memory database');
-      return false;
-    }
-    
-    // Create the Supabase client
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false }
-    });
-    
-    // Test the connection
-    const { error } = await supabase.from('reservations').select('count', { count: 'exact', head: true });
-    if (error) {
-      console.error('Supabase connection test failed:', error);
-      return false;
-    }
-    
-    console.log('Supabase connection successful. Using Supabase for database operations.');
-    
-    // Set up reservation service with this supabase client
-    reservationService = {
-      // Map from DB format to app format
-      mapDbToReservation: (dbReservation) => ({
-        id: dbReservation.id,
-        customerName: dbReservation.customer_name,
-        phoneNumber: dbReservation.phone_number,
-        date: dbReservation.date,
-        time: dbReservation.time,
-        partySize: dbReservation.party_size,
-        source: dbReservation.source,
-        status: dbReservation.status,
-        notes: dbReservation.notes || '',
-        createdAt: dbReservation.created_at,
-        updatedAt: dbReservation.updated_at
-      }),
-      
-      // Map from app format to DB format
-      mapReservationToDb: (reservation) => ({
-        customer_name: reservation.customerName,
-        phone_number: reservation.phoneNumber,
-        date: reservation.date,
-        time: reservation.time,
-        party_size: reservation.partySize,
-        source: reservation.source,
-        status: reservation.status,
-        notes: reservation.notes
-      }),
-      
-      // Get all reservations
-      async getReservations() {
-        const { data, error } = await supabase
-          .from('reservations')
-          .select('*')
-          .order('date', { ascending: true })
-          .order('time', { ascending: true });
-          
-        if (error) throw error;
-        return data.map(this.mapDbToReservation);
-      },
-      
-      // Get one reservation
-      async getReservation(id) {
-        const { data, error } = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('id', id)
-          .single();
-          
-        if (error && error.code !== 'PGRST116') throw error;
-        return data ? this.mapDbToReservation(data) : null;
-      },
-      
-      // Create reservation
-      async createReservation(reservation) {
-        const dbReservation = this.mapReservationToDb(reservation);
-        
-        const { data, error } = await supabase
-          .from('reservations')
-          .insert(dbReservation)
-          .select()
-          .single();
-          
-        if (error) throw error;
-        return this.mapDbToReservation(data);
-      },
-      
-      // Update reservation
-      async updateReservation(id, reservation) {
-        const dbReservation = this.mapReservationToDb(reservation);
-        
-        const { data, error } = await supabase
-          .from('reservations')
-          .update(dbReservation)
-          .eq('id', id)
-          .select()
-          .single();
-          
-        if (error) throw error;
-        return this.mapDbToReservation(data);
-      },
-      
-      // Update status
-      async updateReservationStatus(id, status) {
-        const { data, error } = await supabase
-          .from('reservations')
-          .update({ status })
-          .eq('id', id)
-          .select()
-          .single();
-          
-        if (error) throw error;
-        return this.mapDbToReservation(data);
-      },
-      
-      // Delete reservation
-      async deleteReservation(id) {
-        const { error } = await supabase
-          .from('reservations')
-          .delete()
-          .eq('id', id);
-          
-        if (error) throw error;
-      }
-    };
-    
-    return true;
-  } catch (err) {
-    console.error('Error setting up Supabase:', err);
-    return false;
-  }
-}
+// Log environment details for debugging
+console.log('Node Environment:', process.env.NODE_ENV);
+console.log('Supabase Environment Variables:');
+console.log('- SUPABASE_URL is set:', !!process.env.SUPABASE_URL);
+console.log('- SUPABASE_ANON_KEY is set:', !!process.env.SUPABASE_ANON_KEY);
+console.log('- SUPABASE_SERVICE_ROLE_KEY is set:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+console.log('- VITE_SUPABASE_URL is set:', !!process.env.VITE_SUPABASE_URL);
+console.log('- VITE_SUPABASE_ANON_KEY is set:', !!process.env.VITE_SUPABASE_ANON_KEY);
 
 // Initialize Express app
 const app = express();
@@ -186,27 +32,64 @@ const database = {
   reservations: []
 };
 
-// Helper function to check if Supabase is configured
+// Simple Supabase client to use in Vercel environment
+let supabase = null;
+let reservationService = null;
+let supabaseIsConfigured = false;
+
+// Direct CommonJS approach for Vercel
+try {
+  const { createClient } = require('@supabase/supabase-js');
+  
+  const supabaseUrl = process.env.SUPABASE_URL || '';
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+  
+  if (supabaseUrl && supabaseKey) {
+    console.log('Initializing Supabase client with URL:', supabaseUrl.substring(0, 12) + '...');
+    supabase = createClient(supabaseUrl, supabaseKey);
+    supabaseIsConfigured = true;
+    console.log('Supabase client initialized successfully');
+  } else {
+    console.warn('Missing Supabase credentials - falling back to in-memory database');
+  }
+} catch (err) {
+  console.error('Failed to initialize Supabase client:', err.message);
+}
+
+// Helper function to check if Supabase should be used
 const isSupabaseConfigured = () => {
-  return reservationService !== undefined;
+  return supabaseIsConfigured && supabase !== null;
 };
 
-// Initialize Supabase services
-(async () => {
-  try {
-    const success = await importServices();
-    if (success) {
-      console.log('Supabase services initialized successfully');
-    } else {
-      console.log('Falling back to in-memory database');
-      addSampleData(); // Only add sample data for in-memory database
-    }
-  } catch (err) {
-    console.error('Error initializing Supabase services:', err);
-    console.log('Falling back to in-memory database');
-    addSampleData(); // Only add sample data for in-memory database
-  }
-})();
+// Setup mapping functions for database operations
+const mapDbToReservation = (dbReservation) => {
+  return {
+    id: dbReservation.id,
+    customerName: dbReservation.customer_name,
+    phoneNumber: dbReservation.phone_number,
+    date: dbReservation.date,
+    time: dbReservation.time,
+    partySize: dbReservation.party_size,
+    source: dbReservation.source,
+    status: dbReservation.status,
+    notes: dbReservation.notes || '',
+    createdAt: dbReservation.created_at,
+    updatedAt: dbReservation.updated_at,
+  };
+};
+
+const mapReservationToDb = (reservation) => {
+  return {
+    customer_name: reservation.customerName,
+    phone_number: reservation.phoneNumber,
+    date: reservation.date,
+    time: reservation.time,
+    party_size: reservation.partySize,
+    source: reservation.source,
+    status: reservation.status,
+    notes: reservation.notes || '',
+  };
+};
 
 // Validation schemas
 const reservationSchema = z.object({
@@ -233,12 +116,24 @@ const callFluentPayloadSchema = z.object({
 app.get('/api/reservations', async (req, res) => {
   try {
     if (isSupabaseConfigured()) {
-      const reservations = await reservationService.getReservations();
+      console.log('Using Supabase to fetch reservations');
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('*')
+        .order('date', { ascending: true })
+        .order('time', { ascending: true });
+        
+      if (error) {
+        console.error('Supabase error fetching reservations:', error);
+        throw error;
+      }
+      
       res.json({
         success: true,
-        data: reservations,
+        data: data.map(mapDbToReservation),
       });
     } else {
+      console.log('Using in-memory database to fetch reservations');
       res.json({
         success: true,
         data: database.reservations,
@@ -248,7 +143,7 @@ app.get('/api/reservations', async (req, res) => {
     console.error('Error fetching reservations:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch reservations',
+      error: 'Failed to fetch reservations: ' + error.message,
     });
   }
 });
@@ -258,9 +153,19 @@ app.get('/api/reservations/:id', async (req, res) => {
     const { id } = req.params;
     
     if (isSupabaseConfigured()) {
-      const reservation = await reservationService.getReservation(id);
+      console.log(`Using Supabase to fetch reservation ${id}`);
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', id)
+        .single();
       
-      if (!reservation) {
+      if (error && error.code !== 'PGRST116') {
+        console.error(`Supabase error fetching reservation ${id}:`, error);
+        throw error;
+      }
+      
+      if (!data) {
         return res.status(404).json({
           success: false,
           error: 'Reservation not found',
@@ -269,7 +174,7 @@ app.get('/api/reservations/:id', async (req, res) => {
       
       res.json({
         success: true,
-        data: reservation,
+        data: mapDbToReservation(data),
       });
     } else {
       const reservation = database.reservations.find(r => r.id === id);
@@ -290,32 +195,48 @@ app.get('/api/reservations/:id', async (req, res) => {
     console.error('Error fetching reservation:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch reservation',
+      error: 'Failed to fetch reservation: ' + error.message,
     });
   }
 });
 
 app.post('/api/reservations', async (req, res) => {
   try {
+    console.log('Creating new reservation:', req.body);
     const validationResult = reservationSchema.safeParse(req.body);
     
     if (!validationResult.success) {
+      console.error('Validation failed:', validationResult.error.message);
       return res.status(400).json({
         success: false,
         error: 'Invalid reservation data: ' + validationResult.error.message,
       });
     }
     
-    const now = new Date().toISOString();
-    
     if (isSupabaseConfigured()) {
-      const reservation = await reservationService.createReservation(validationResult.data);
+      console.log('Using Supabase to create reservation');
+      const dbReservation = mapReservationToDb(validationResult.data);
+      console.log('Mapped reservation data:', dbReservation);
       
+      const { data, error } = await supabase
+        .from('reservations')
+        .insert(dbReservation)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Supabase error creating reservation:', error);
+        throw error;
+      }
+      
+      console.log('Reservation created successfully:', data);
       res.status(201).json({
         success: true,
-        data: reservation,
+        data: mapDbToReservation(data),
       });
     } else {
+      console.log('Using in-memory database to create reservation');
+      const now = new Date().toISOString();
       const newReservation = {
         id: uuidv4(),
         ...validationResult.data,
@@ -334,7 +255,7 @@ app.post('/api/reservations', async (req, res) => {
     console.error('Error creating reservation:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to create reservation',
+      error: 'Failed to create reservation: ' + error.message,
     });
   }
 });
@@ -342,9 +263,11 @@ app.post('/api/reservations', async (req, res) => {
 app.put('/api/reservations/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Updating reservation ${id}:`, req.body);
     const validationResult = reservationSchema.safeParse(req.body);
     
     if (!validationResult.success) {
+      console.error('Validation failed:', validationResult.error.message);
       return res.status(400).json({
         success: false,
         error: 'Invalid reservation data: ' + validationResult.error.message,
@@ -352,11 +275,25 @@ app.put('/api/reservations/:id', async (req, res) => {
     }
     
     if (isSupabaseConfigured()) {
-      const reservation = await reservationService.updateReservation(id, validationResult.data);
+      console.log('Using Supabase to update reservation');
+      const dbReservation = mapReservationToDb(validationResult.data);
       
+      const { data, error } = await supabase
+        .from('reservations')
+        .update(dbReservation)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Supabase error updating reservation:', error);
+        throw error;
+      }
+      
+      console.log('Reservation updated successfully:', data);
       res.json({
         success: true,
-        data: reservation,
+        data: mapDbToReservation(data),
       });
     } else {
       const index = database.reservations.findIndex(r => r.id === id);
@@ -385,7 +322,7 @@ app.put('/api/reservations/:id', async (req, res) => {
     console.error('Error updating reservation:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to update reservation',
+      error: 'Failed to update reservation: ' + error.message,
     });
   }
 });
@@ -394,6 +331,7 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
+    console.log(`Updating status for reservation ${id} to ${status}`);
     
     if (!status || !['Pending', 'Confirmed', 'Cancelled'].includes(status)) {
       return res.status(400).json({
@@ -403,11 +341,24 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
     }
     
     if (isSupabaseConfigured()) {
-      const reservation = await reservationService.updateReservationStatus(id, status);
+      console.log('Using Supabase to update reservation status');
       
+      const { data, error } = await supabase
+        .from('reservations')
+        .update({ status })
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Supabase error updating reservation status:', error);
+        throw error;
+      }
+      
+      console.log('Reservation status updated successfully:', data);
       res.json({
         success: true,
-        data: reservation,
+        data: mapDbToReservation(data),
       });
     } else {
       const index = database.reservations.findIndex(r => r.id === id);
@@ -431,7 +382,7 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
     console.error('Error updating reservation status:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to update reservation status',
+      error: 'Failed to update reservation status: ' + error.message,
     });
   }
 });
@@ -439,10 +390,22 @@ app.patch('/api/reservations/:id/status', async (req, res) => {
 app.delete('/api/reservations/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`Deleting reservation ${id}`);
     
     if (isSupabaseConfigured()) {
-      await reservationService.deleteReservation(id);
+      console.log('Using Supabase to delete reservation');
       
+      const { error } = await supabase
+        .from('reservations')
+        .delete()
+        .eq('id', id);
+      
+      if (error) {
+        console.error('Supabase error deleting reservation:', error);
+        throw error;
+      }
+      
+      console.log('Reservation deleted successfully');
       res.json({
         success: true,
       });
@@ -466,7 +429,7 @@ app.delete('/api/reservations/:id', async (req, res) => {
     console.error('Error deleting reservation:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to delete reservation',
+      error: 'Failed to delete reservation: ' + error.message,
     });
   }
 });
@@ -535,10 +498,10 @@ app.post('/api/webhook/callfluent', async (req, res) => {
       formattedTime = `${formattedTime}:00`;
     }
     
-    const now = new Date().toISOString();
-    
     if (isSupabaseConfigured()) {
-      const reservationData = {
+      console.log('Using Supabase to create reservation from webhook');
+      
+      const dbReservation = {
         customer_name: payload.name,
         phone_number: payload.phone_number,
         date: formattedDate,
@@ -549,8 +512,20 @@ app.post('/api/webhook/callfluent', async (req, res) => {
         notes: payload.notes || '',
       };
       
-      const reservation = await reservationService.createReservation(reservationData);
+      console.log('Mapped reservation data:', dbReservation);
       
+      const { data, error } = await supabase
+        .from('reservations')
+        .insert(dbReservation)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Supabase error creating reservation from webhook:', error);
+        throw error;
+      }
+      
+      const reservation = mapDbToReservation(data);
       console.log('Created new reservation from CallFluent AI:', reservation);
       
       res.status(201).json({
@@ -558,6 +533,9 @@ app.post('/api/webhook/callfluent', async (req, res) => {
         data: reservation,
       });
     } else {
+      console.log('Using in-memory database for webhook reservation');
+      const now = new Date().toISOString();
+      
       const newReservation = {
         id: uuidv4(),
         customerName: payload.name,
@@ -585,7 +563,7 @@ app.post('/api/webhook/callfluent', async (req, res) => {
     console.error('Error processing CallFluent webhook:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to process webhook',
+      error: 'Failed to process webhook: ' + error.message,
     });
   }
 });
@@ -694,7 +672,10 @@ const addSampleData = () => {
 
 // Add sample data only for in-memory database (not Supabase)
 if (!isSupabaseConfigured()) {
+  console.log('Initializing in-memory database with sample data');
   addSampleData();
+} else {
+  console.log('Using Supabase for database - not adding sample data');
 }
 
 // Export the Express API
