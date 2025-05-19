@@ -10,24 +10,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-    },
-  },
-  optimizeDeps: {
-    include: ['@emotion/react', '@emotion/styled', '@mui/material'],
-    esbuildOptions: {
-      // Fix for MUI icons import issue
-      resolveExtensions: ['.js', '.jsx', '.ts', '.tsx'],
-    }
-  },
   build: {
+    outDir: 'dist',
     commonjsOptions: {
       transformMixedEsModules: true,
-    },
+    }
   }
 })
