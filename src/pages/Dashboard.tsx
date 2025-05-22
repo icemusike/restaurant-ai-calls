@@ -48,22 +48,43 @@ const Dashboard = () => {
   const fetchReservations = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/reservations');
-      if (response.data.success) {
-        setReservations(response.data.data);
+      // Load from localStorage instead of API
+      const storedReservations = localStorage.getItem('reservations');
+      if (storedReservations) {
+        const parsedReservations = JSON.parse(storedReservations) as Reservation[];
+        setReservations(parsedReservations);
         setError(null);
       } else {
-        setError(response.data.error || 'Failed to fetch reservations');
+        // For first-time use, create mock data
+        const mockReservations = generateMockReservations();
+        setReservations(mockReservations);
+        // Save mock data to localStorage
+        localStorage.setItem('reservations', JSON.stringify(mockReservations));
       }
     } catch (err) {
-      setError('Error connecting to the server. Please try again later.');
-      console.error('Error fetching reservations:', err);
+      setError('Error loading reservations from browser storage.');
+      console.error('Error loading reservations:', err);
       
-      // For demo purposes, create mock data if API fails
+      // For demo purposes, create mock data if loading fails
       const mockReservations = generateMockReservations();
       setReservations(mockReservations);
+      // Try to save to localStorage
+      try {
+        localStorage.setItem('reservations', JSON.stringify(mockReservations));
+      } catch (storageErr) {
+        console.error('Error saving to localStorage:', storageErr);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper function to save reservations to localStorage
+  const saveReservationsToStorage = (updatedReservations: Reservation[]) => {
+    try {
+      localStorage.setItem('reservations', JSON.stringify(updatedReservations));
+    } catch (err) {
+      console.error('Error saving reservations to localStorage:', err);
     }
   };
 
@@ -129,14 +150,27 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    // Initial load of reservations
     fetchReservations();
     
-    // Set up polling for new reservations (every 30 seconds)
-    const intervalId = setInterval(() => {
-      fetchReservations();
-    }, 30000);
+    // No need for polling since we're using localStorage
+    // But we can add an event listener for storage changes in other tabs
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === 'reservations' && event.newValue) {
+        try {
+          const updatedReservations = JSON.parse(event.newValue) as Reservation[];
+          setReservations(updatedReservations);
+        } catch (err) {
+          console.error('Error parsing reservations from storage event:', err);
+        }
+      }
+    };
     
-    return () => clearInterval(intervalId);
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -192,21 +226,6 @@ const Dashboard = () => {
   // Function to send reservation data to CallFluent webhook
   const sendToCallfluentWebhook = async (reservation: Reservation) => {
     try {
-      // Get CallFluent settings from localStorage
-      const savedSettings = localStorage.getItem('callfluentSettings');
-      if (!savedSettings) {
-        console.log('CallFluent settings not found');
-        return;
-      }
-      
-      const settings = JSON.parse(savedSettings);
-      
-      // Check if auto-calling is enabled and webhook URL is set
-      if (!settings.autoCallEnabled || !settings.webhookEndpoint) {
-        console.log('Auto-calling is disabled or webhook URL is not set');
-        return;
-      }
-      
       // Format date and time for better compatibility
       const dateObj = new Date(reservation.date);
       const formattedDate = format(dateObj, 'yyyy-MM-dd');
@@ -230,190 +249,92 @@ const Dashboard = () => {
         reservationId: reservation.id
       };
       
-      console.log('Sending to webhook:', settings.webhookEndpoint);
+      // Use the specified webhook URL
+      const webhookUrl = 'https://api.callfluent.ai/api/call-api/make-call/6033';
+      
+      console.log('Sending to webhook:', webhookUrl);
       console.log('Payload:', payload);
       
-      // Use our own dedicated webhook endpoint if we're on vercel
-      const isVercel = window.location.hostname.includes('vercel.app');
-      
-      if (isVercel) {
-        console.log('Using dedicated webhook endpoint for Vercel');
-        try {
-          // First try to send to our internal webhook endpoint that handles Supabase directly
-          const internalResponse = await axios.post('/api/webhook-create', payload, {
-            timeout: 10000,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            }
-          });
-          
-          console.log('Internal webhook response:', internalResponse.data);
-          showSnackbar('Reservation data processed internally and sent to CallFluent AI', 'info');
-        } catch (internalError) {
-          console.error('Error with internal webhook processing:', internalError);
-          // Fall back to external webhook if internal fails
-          await sendToExternalWebhook(settings.webhookEndpoint, payload);
+      // Send to the specified webhook URL
+      const response = await axios.post(webhookUrl, payload, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         }
-      } else {
-        // If not on Vercel, send directly to external webhook
-        await sendToExternalWebhook(settings.webhookEndpoint, payload);
-      }
+      });
       
+      console.log('Webhook response:', response.data);
+      showSnackbar('Reservation data sent to CallFluent AI for automated call', 'info');
       return true;
     } catch (error) {
       console.error('Error sending data to CallFluent webhook:', error);
-      showSnackbar('Failed to send data to CallFluent AI. Please check webhook settings.', 'error');
+      showSnackbar('Failed to send data to CallFluent AI.', 'error');
       return false;
     }
   };
 
-  // Helper function to send to external webhook
-  const sendToExternalWebhook = async (webhookUrl: string, payload: CallFluentPayload) => {
-    const response = await axios.post(webhookUrl, payload, {
-      timeout: 10000,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      }
-    });
-    
-    console.log('External webhook response:', response.data);
-    showSnackbar('Reservation data sent to CallFluent AI for automated call', 'info');
-    return response;
-  };
-
   const handleSaveReservation = async (reservationData: Omit<Reservation, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      if (selectedReservation) {
-        // Update existing reservation - keep using the regular endpoint
-        const response = await axios.put(`/api/reservations/${selectedReservation.id}`, reservationData);
-        if (response.data.success) {
-          setReservations(prev => 
-            prev.map(r => r.id === selectedReservation.id ? { ...response.data.data } : r)
-          );
-          showSnackbar('Reservation updated successfully', 'success');
-        } else {
-          showSnackbar(response.data.error || 'Failed to update reservation', 'error');
-        }
-      } else {
-        // Create new reservation - use the simplest endpoint first, then try others as fallback
-        console.log('Creating new reservation with simplified endpoint');
-        
-        // Try different endpoints in order of simplicity
-        const endpoints = [
-          '/api/simpledb',             // Simplest endpoint - minimal code
-          '/api/supabase-create',      // More complex but with better validation
-          '/api/reservations'          // Original endpoint as final fallback
-        ];
-        
-        let success = false;
-        let lastError = null;
-        
-        // Try each endpoint in sequence until one works
-        for (const endpoint of endpoints) {
-          try {
-            console.log(`Trying endpoint: ${endpoint}`);
-            const response = await axios.post(endpoint, reservationData, {
-              timeout: 10000 // 10 second timeout
-            });
-            
-            if (response.data.success) {
-              const newReservation = response.data.data;
-              setReservations(prev => [...prev, newReservation]);
-              showSnackbar('Reservation created successfully', 'success');
-              
-              // Send to CallFluent webhook for automated call
-              await sendToCallfluentWebhook(newReservation);
-              success = true;
-              break; // Exit the loop if successful
-            }
-          } catch (error) {
-            console.error(`Error with endpoint ${endpoint}:`, error);
-            lastError = error;
-            // Continue to next endpoint
-          }
-        }
-        
-        if (!success) {
-          console.error('All endpoints failed:', lastError);
-          showSnackbar('Error connecting to the server. Please try again.', 'error');
-          
-          // For demo purposes, simulate successful save
-          const now = new Date().toISOString();
-          const newReservation: Reservation = {
-            ...reservationData,
-            id: selectedReservation?.id || `demo-${Math.random().toString(36).substring(2, 9)}`,
-            createdAt: selectedReservation?.createdAt || now,
-            updatedAt: now,
-          };
-          
-          if (selectedReservation) {
-            // Update existing reservation
-            setReservations(prev => 
-              prev.map(r => r.id === selectedReservation.id ? newReservation : r)
-            );
-          } else {
-            // Create new reservation
-            setReservations(prev => [...prev, newReservation]);
-            
-            // Send to CallFluent webhook for automated call (demo)
-            await sendToCallfluentWebhook(newReservation);
-          }
-          
-          showSnackbar('Reservation saved successfully (DEMO MODE)', 'success');
-        }
-      }
-    } catch (err) {
-      console.error('Error saving reservation:', err);
-      showSnackbar('Error connecting to the server. Please try again.', 'error');
-      
-      // For demo purposes, simulate successful save
       const now = new Date().toISOString();
-      const newReservation: Reservation = {
-        ...reservationData,
-        id: selectedReservation?.id || `demo-${Math.random().toString(36).substring(2, 9)}`,
-        createdAt: selectedReservation?.createdAt || now,
-        updatedAt: now,
-      };
       
       if (selectedReservation) {
         // Update existing reservation
-        setReservations(prev => 
-          prev.map(r => r.id === selectedReservation.id ? newReservation : r)
+        const updatedReservation: Reservation = {
+          ...selectedReservation,
+          ...reservationData,
+          updatedAt: now
+        };
+        
+        const updatedReservations = reservations.map(r => 
+          r.id === selectedReservation.id ? updatedReservation : r
         );
+        
+        setReservations(updatedReservations);
+        saveReservationsToStorage(updatedReservations);
+        showSnackbar('Reservation updated successfully', 'success');
       } else {
         // Create new reservation
-        setReservations(prev => [...prev, newReservation]);
+        const newId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
         
-        // Send to CallFluent webhook for automated call (demo)
+        const newReservation: Reservation = {
+          ...reservationData,
+          id: newId,
+          createdAt: now,
+          updatedAt: now,
+        };
+        
+        // Add to state and ensure we're creating a new array reference
+        const updatedReservations = [...reservations, newReservation];
+        setReservations(updatedReservations);
+        
+        // Save to localStorage
+        saveReservationsToStorage(updatedReservations);
+        
+        // Send to CallFluent webhook for automated call
         await sendToCallfluentWebhook(newReservation);
+        
+        showSnackbar('Reservation created successfully', 'success');
       }
-      
-      showSnackbar('Reservation saved successfully (DEMO MODE)', 'success');
+    } catch (err) {
+      console.error('Error saving reservation:', err);
+      showSnackbar('Error saving reservation. Please try again.', 'error');
     }
   };
 
   const handleUpdateStatus = async (id: string, status: 'Confirmed' | 'Cancelled') => {
     try {
-      const response = await axios.patch(`/api/reservations/${id}/status`, { status });
-      if (response.data.success) {
-        setReservations(prev => 
-          prev.map(r => r.id === id ? { ...r, status, updatedAt: new Date().toISOString() } : r)
-        );
-        showSnackbar(`Reservation ${status.toLowerCase()} successfully`, 'success');
-      } else {
-        showSnackbar(response.data.error || `Failed to ${status.toLowerCase()} reservation`, 'error');
-      }
+      // Update reservation status in local memory
+      const updatedReservations = reservations.map(r => 
+        r.id === id ? { ...r, status, updatedAt: new Date().toISOString() } : r
+      );
+      
+      setReservations(updatedReservations);
+      saveReservationsToStorage(updatedReservations);
+      showSnackbar(`Reservation ${status.toLowerCase()} successfully`, 'success');
     } catch (err) {
       console.error('Error updating reservation status:', err);
-      showSnackbar('Error connecting to the server. Please try again.', 'error');
-      
-      // For demo purposes, simulate successful update
-      setReservations(prev => 
-        prev.map(r => r.id === id ? { ...r, status, updatedAt: new Date().toISOString() } : r)
-      );
-      showSnackbar(`Reservation ${status.toLowerCase()} successfully`, 'success');
+      showSnackbar('Error updating status. Please try again.', 'error');
     }
   };
 
@@ -436,6 +357,7 @@ const Dashboard = () => {
   };
 
   const handleRefresh = () => {
+    // Simply reload from localStorage
     fetchReservations();
     showSnackbar('Refreshing reservations...', 'info');
   };
